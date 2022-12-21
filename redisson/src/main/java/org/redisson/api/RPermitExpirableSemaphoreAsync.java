@@ -99,19 +99,43 @@ public interface RPermitExpirableSemaphoreAsync extends RExpirableAsync {
     RFuture<Void> releaseAsync(String permitId);
 
     /**
-     * Returns amount of available permits.
+     * Returns number of available permits.
      *
      * @return number of permits
      */
     RFuture<Integer> availablePermitsAsync();
 
     /**
-     * Tries to set number of permits.
+     * Returns the number of permits.
+     *
+     * @return number of permits
+     */
+    RFuture<Integer> getPermitsAsync();
+
+    /**
+     * Returns the number of claimed permits.
+     *
+     * @return number of claimed permits
+     */
+    RFuture<Integer> claimedPermitsAsync();
+
+    /**
+     * Tries to set number of available permits.
      *
      * @param permits - number of permits
      * @return <code>true</code> if permits has been set successfully, otherwise <code>false</code>.  
      */
     RFuture<Boolean> trySetPermitsAsync(int permits);
+
+    /**
+     * Sets the number of permits to the provided value and returns the number of permits added.
+     * Calculates the <code>delta</code> between the given <code>permits</code> vaue and the
+     * current number of permits, then increases the number of available permits by <code>delta</code>.
+     *
+     * @param permits - number of permits
+     * @return delta - number of permits that were added, will be negative if permits were removed
+     */
+    RFuture<Integer> setPermitsAsync(int permits);
 
     /**
      * Increases or decreases the number of available permits by defined value. 

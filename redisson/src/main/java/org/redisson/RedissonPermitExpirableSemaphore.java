@@ -627,6 +627,16 @@ public class RedissonPermitExpirableSemaphore extends RedissonExpirable implemen
     public int availablePermits() {
         return get(availablePermitsAsync());
     }
+
+    @Override
+    public int getPermits() {
+        return get(getPermitsAsync());
+    }
+
+    @Override
+    public int claimedPermits() {
+        return get(claimedPermitsAsync());
+    }
     
     @Override
     public RFuture<Integer> availablePermitsAsync() {
@@ -646,8 +656,73 @@ public class RedissonPermitExpirableSemaphore extends RedissonExpirable implemen
     }
 
     @Override
+    public RFuture<Integer> getPermitsAsync() {
+        return commandExecutor.evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_INTEGER,
+                "local expiredIds = redis.call('zrangebyscore', KEYS[2], 0, ARGV[1], 'limit', 0, -1); " +
+                "if #expiredIds > 0 then " +
+                    "redis.call('zrem', KEYS[2], unpack(expiredIds)); " +
+                    "local value = redis.call('incrby', KEYS[1], #expiredIds); " +
+                    "if tonumber(value) > 0 then " +
+                        "redis.call('publish', KEYS[3], value); " +
+                    "end;" +
+                "end; " +
+                "local available = redis.call('get', KEYS[1]); " +
+                "if available == false then " +
+                    "return 0 " +
+                "end;" +
+                "local claimed = redis.call('zcount', KEYS[2], 0, '+inf'); " +
+                "if claimed == false then " +
+                    "return tonumber(available) " +
+                "end;" +
+                "return tonumber(available) + claimed;",
+                Arrays.<Object>asList(getRawName(), timeoutName, getChannelName()), System.currentTimeMillis());
+    }
+
+    @Override
+    public RFuture<Integer> claimedPermitsAsync() {
+        return commandExecutor.evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_INTEGER,
+                "local expiredIds = redis.call('zrangebyscore', KEYS[2], 0, ARGV[1], 'limit', 0, -1); " +
+                "if #expiredIds > 0 then " +
+                    "redis.call('zrem', KEYS[2], unpack(expiredIds)); " +
+                    "local value = redis.call('incrby', KEYS[1], #expiredIds); " +
+                    "if tonumber(value) > 0 then " +
+                        "redis.call('publish', KEYS[3], value); " +
+                    "end;" +
+                "end; " +
+                "local claimed = redis.call('zcount', KEYS[2], 0, '+inf'); " +
+                "return claimed == false and 0 or claimed;",
+                Arrays.<Object>asList(getRawName(), timeoutName, getChannelName()), System.currentTimeMillis());
+    }
+
+    @Override
     public boolean trySetPermits(int permits) {
         return get(trySetPermitsAsync(permits));
+    }
+
+    @Override
+    public int setPermits(int permits) {
+        return get(setPermitsAsync(permits));
+    }
+
+    @Override
+    public RFuture<Integer> setPermitsAsync(int permits) {
+        return commandExecutor.evalWriteAsync(getRawName(), LongCodec.INSTANCE, RedisCommands.EVAL_INTEGER,
+                "local available = redis.call('get', KEYS[1]); " +
+                "if (available == false) then " +
+                    "redis.call('set', KEYS[1], ARGV[1]); " +
+                    "redis.call('publish', KEYS[2], ARGV[1]); " +
+                    "return ARGV[1];" +
+                "end;" +
+                "local claimed = redis.call('zcount', KEYS[3], 0, '+inf'); " +
+                "local maximum = (claimed == false and 0 or claimed) + tonumber(available); " +
+                "if (maximum == ARGV[1]) then " +
+                    "return 0;" +
+                "end;" +
+                "local delta = tonumber(ARGV[1]) - maximum; " +
+                "redis.call('incrby', KEYS[1], delta); " +
+                "redis.call('publish', KEYS[2], ARGV[1]); " +
+                "return delta;",
+                Arrays.<Object>asList(getRawName(), getChannelName(), timeoutName), permits);
     }
 
     @Override
